@@ -9,7 +9,8 @@ import numpy as np
 from tqdm import tqdm
 
 from Arena import Arena
-from MCTS import MCTS
+# from MCTS import MCTS
+from my_mcts import my_mcts
 from Game import Game
 from pprint import pprint
 
@@ -32,7 +33,7 @@ class Coach():
 #         self.nnet = nnet
         self.nnet = nnet  # only 1 network in alphazero
         self.args = args
-        self.mcts = MCTS(self.game, self.nnet, self.args)
+        self.mcts = my_mcts(self.game, self.nnet, self.args)
         self.trainExamplesHistory = []  # history of examples from args.numItersForTrainExamplesHistory latest iterations
         self.skipFirstSelfPlay = False  # can be overriden in loadTrainExamples()
 
@@ -65,10 +66,10 @@ class Coach():
             episodeStep += 1
             print("Currently on move ",episodeStep)
             canonicalBoard = game.getCanonicalForm()
-            temp = int(episodeStep < self.args.tempThreshold)
+            # temp = int(episodeStep < self.args.tempThreshold)
             
             game_copy = game.create_copy()
-            self.mcts = MCTS(game_copy, self.nnet, self.args)
+            self.mcts = my_mcts(game_copy, self.nnet, self.args)
             pi = self.mcts.getActionProb(game_copy, opt_player)
             sym = game.getSymmetries(canonicalBoard, pi)
             for b, p in sym:
@@ -93,21 +94,21 @@ class Coach():
         It then pits the new neural network against the old one and accepts it
         only if it wins >= updateThreshold fraction of games.
         """
-        for i in range(1, self.args.numIters + 1):
+        for i in range(1, self.args["num_iters"] + 1):
             # bookkeeping
             log.info(f'Starting Iter #{i} ...')
             # examples of the iteration
             if not self.skipFirstSelfPlay or i > 1:
-                iterationTrainExamples = deque([], maxlen=self.args.maxlenOfQueue)
+                iterationTrainExamples = deque([], maxlen=self.args["maxlenOfQueue"])
 
-                for _ in tqdm(range(self.args.numEps), desc="Self Play"):
-                    self.mcts = MCTS(self.game, self.nnet, self.args)  # reset search tree
+                for _ in tqdm(range(self.args["numEps"]), desc="Self Play"):
+                    self.mcts = my_mcts(self.game, self.nnet, self.args)  # reset search tree
                     iterationTrainExamples += self.executeEpisode()
 
                 # save the iteration examples to the history 
                 self.trainExamplesHistory.append(iterationTrainExamples)
 
-            if len(self.trainExamplesHistory) > self.args.numItersForTrainExamplesHistory:
+            if len(self.trainExamplesHistory) > self.args["numItersForTrainExamplesHistory"]:
                 log.warning(
                     f"Removing the oldest entry in trainExamples. len(trainExamplesHistory) = {len(self.trainExamplesHistory)}")
                 self.trainExamplesHistory.pop(0)
@@ -121,7 +122,7 @@ class Coach():
                 trainExamples.extend(e)
             shuffle(trainExamples)
 
-            self.nnet.save_checkpoint(folder=self.args.checkpoint, filename='temp.pth.tar')
+            self.nnet.save_checkpoint(folder=self.args["checkpoints"], filename='temp.pth.tar')
 
             self.nnet.train(trainExamples)
 
@@ -130,7 +131,7 @@ class Coach():
         return 'checkpoint_' + str(iteration) + '.pth.tar'
 
     def saveTrainExamples(self, iteration):
-        folder = self.args.checkpoint
+        folder = self.args["checkpoint"]
         if not os.path.exists(folder):
             os.makedirs(folder)
         filename = os.path.join(folder, self.getCheckpointFile(iteration) + ".examples")
@@ -139,7 +140,7 @@ class Coach():
         f.closed
 
     def loadTrainExamples(self):
-        modelFile = os.path.join(self.args.load_folder_file[0], self.args.load_folder_file[1])
+        modelFile = os.path.join(self.args["load_folder_file"][0], self.args["load_folder_file"][1])
         examplesFile = modelFile + ".examples"
         if not os.path.isfile(examplesFile):
             log.warning(f'File "{examplesFile}" with trainExamples not found!')
