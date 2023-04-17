@@ -71,16 +71,6 @@ class my_mcts():
         # Normalizing the probabilities
         prob = [x/total for x in prob]
         
-        
-        # The below might be implemented in a different branch 
-        # (If we use the below code) we would be implementing TD sort of algo
-        # # The value of being the state s is 
-        # # following the policy after all searches, what is the value
-        # # Lets make this optimistic, which means that the current state is 
-        # # as good as the next best state and so
-        # index_max = max(range(len(prob)), key=prob.__getitem__)
-        # v = self.SA_score[(s,index_max)] / self.SA_counts[(s,index_max)]
-        # print("The value of being in state S: ", v)
         print("The probabilities for state S are :", prob)
         
         return prob
