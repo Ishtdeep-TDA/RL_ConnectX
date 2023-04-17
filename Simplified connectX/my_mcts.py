@@ -1,12 +1,6 @@
-import logging
-import math
-
 import numpy as np
-
-EPS = 1e-8
-
-log = logging.getLogger(__name__)
-
+import math
+import time
 
 class my_mcts():
     '''
@@ -45,6 +39,9 @@ class my_mcts():
         # The output should be a probability distribution of moves
         self.nnet = nnet
         
+        # parameters for testing speed
+        self.search_count = 0
+        self.total_calls = 0
     def getActionProb(self,game,opt_player):
         '''
         This function runs all the simulations of the MCTS starting
@@ -54,16 +51,17 @@ class my_mcts():
         game: this is the current state of the board
         opt_player: this is the player to optimize for
         '''
+        start = time.time()
         for i in range(self.args["num_mcts_sims"]):
-            print("inside mcts, iteration number",i)
             self.search(game.create_copy(),opt_player)
-        
+            print("total searches : ",self.search_count)
+            print("total NN calls : ",self.total_calls)
+        print(f"total time taken to run {self.args['num_mcts_sims']} iterations is {time.time() - start}")
         s = game.stringRepresentation()
         # Lets get the scores of children of the current state s and exponentiate to
         # implement softmax
         prob = [math.exp(self.SA_score[(s,a)]) if (s,a) in self.SA_score else 0\
                 for a in range(game.getActionSize())]
-        print("exponentiated",prob)
         # Now we need to normalize these scores
         total = sum(prob)
         
@@ -95,9 +93,8 @@ class my_mcts():
         If we are at the leaf node, we should use the current policy to expand the tree
         
         '''
+        self.search_count += 1
         s = game.stringRepresentation()
-        
-        
         #check if the game has ended
         game_result = game.getGameEnded(opt_player)
         if game_result != 0:
@@ -108,6 +105,7 @@ class my_mcts():
             # Now we will play a full game from here, using the NN and record the result
             canonicalBoard = game.getCanonicalForm()
             q_score,v_score = self.nnet.predict(canonicalBoard)
+            self.total_calls += 1
             valids = game.getValidMoves()
             q_score = q_score * valids  # masking invalid moves
             sum_Ps_s = np.sum(q_score)
@@ -166,3 +164,5 @@ class my_mcts():
                 self.SA_counts[(s, best_action)] = 1
             #passing the result to the parent
             return result
+
+

@@ -8,145 +8,161 @@ EPS = 1e-8
 log = logging.getLogger(__name__)
 
 
-class MCTS():
-    """
-    This class handles the MCTS tree.
-    """
-
-    def __init__(self, game, nnet, args):
-        self.game = game
-        self.nnet = nnet
+class my_mcts():
+    '''
+    Implementation of MCTS algorithm based on the lecture 9
+    from David Silver's course on youtube.
+    
+    Before leaf node is found, we run UCB, and after that we run
+    the current policy.
+    
+    Leaf node is defined as a node which has not been seen by the UCB algorithm,
+    Each time a node is found which is not seen, it gets added into the UCB
+    tree (which is S_counts).
+    '''
+    def __init__(self,cur_state,nnet,args):
+        '''
+        state - It is the root state (in this case the game (which is a wrapper over
+        the simplifiedconnectx gym environment))
+        cur_policy - This is the policy which is run when the leaf node is found
+        args - this has arguments like exploration rate, num_mcts_sims
+        
+        '''
         self.args = args
-        self.Qsa = {}  # stores Q values for s,a (as defined in the paper)
-        self.Nsa = {}  # stores #times edge s,a was visited
-        self.Ns = {}  # stores #times board s was visited
-        self.Ps = {}  # stores initial policy (returned by neural net)
-
-        self.Es = {}  # stores game.getGameEnded ended for board s
-        self.Vs = {}  # stores game.getValidMoves for board s
-
-    def getActionProb(self, game,opt_player, temp=1):
-        """
-        This function performs numMCTSSims simulations of MCTS starting from
-        canonicalBoard.
+        self.game = cur_state
+        #This is the dictionary which keeps track of the score for all states and actions
+        self.SA_score = {}
+        #This stores the state action pair counts
+        self.SA_counts = {}
+        # This is the dictionary which counts the number of times a state is visited
+        self.S_counts = {}
+        # This stores the total number of times a simulation has been run
+        self.total_counts = 0
+        # This is the exploration constant, which governs how much we should explore
+        # Higher c means higher exploration
+        self.c = args["c"]
+        # This could be a NN or any policy. The input would be the board
+        # The output should be a probability distribution of moves
+        self.nnet = nnet
         
-        board - the board (not the cannonical board)
-        player - current player (this is the player that we want to maximize for)
+    def getActionProb(self,game,opt_player):
+        '''
+        This function runs all the simulations of the MCTS starting
+        from the root node and then returns the final prob distribution
         
-        Returns:
-            probs: a policy vector where the probability of the ith action is
-                   proportional to Nsa[(s,a)]**(1./temp)
-        """
-        # first convert the board into canonical form
-        #canonicalBoard = self.game.getCanonicalForm(board)
-        
-        for i in range(self.args.numMCTSSims):
+        arguments - 
+        game: this is the current state of the board
+        opt_player: this is the player to optimize for
+        '''
+        for i in range(self.args["num_mcts_sims"]):
+            print("inside mcts, iteration number",i)
             self.search(game.create_copy(),opt_player)
-#             print("Completed iteration number", i)
         
         s = game.stringRepresentation()
-        counts = [self.Nsa[(s, a)] if (s, a) in self.Nsa else 0 for a in range(game.getActionSize())]
-
-        if temp == 0:
-            bestAs = np.array(np.argwhere(counts == np.max(counts))).flatten()
-            bestA = np.random.choice(bestAs)
-            probs = [0] * len(counts)
-            probs[bestA] = 1
-            return probs
-
-        counts = [x ** (1. / temp) for x in counts]
-#         print("Counts")
-#         print(counts)
-#         print("temperature",temp)
-        counts_sum = float(sum(counts))
-        probs = [x / counts_sum for x in counts]
-        return probs
-
-    def search(self, game, opt_player):
-        """
-        input:
-        game - game environment
-        opt_player - the player to optimize for
+        # Lets get the scores of children of the current state s and exponentiate to
+        # implement softmax
+        prob = [math.exp(self.SA_score[(s,a)]) if (s,a) in self.SA_score else 0\
+                for a in range(game.getActionSize())]
+        print("exponentiated",prob)
+        # Now we need to normalize these scores
+        total = sum(prob)
         
-        takes in an environment which has information of the current state
+        if total == 0:
+            # should never reach here
+            print("There divide by zero in getActionProb")
+        # Normalizing the probabilities
+        prob = [x/total for x in prob]
         
-        This function performs one iteration of MCTS. It is recursively called
-        till a leaf node is found. The action chosen at each node is one that
-        has the maximum upper confidence bound as in the paper.
-
-        Once a leaf node is found, the neural network is called to return an
-        initial policy P and a value v for the state. This value is propagated
-        up the search path. In case the leaf node is a terminal state, the
-        outcome is propagated up the search path. The values of Ns, Nsa, Qsa are
-        updated.
-
-        NOTE: the return values are the negative of the value of the current
-        state. This is done since v is in [-1,1] and if v is the value of a
-        state for the current player, then its value is -v for the other player.
-
-        Returns:
-            v: the negative of the value of the current canonicalBoard
-        """
-#         print("game ended",self.game.getGameEnded(board, player))
+        
+        # The below might be implemented in a different branch 
+        # (If we use the below code) we would be implementing TD sort of algo
+        # # The value of being the state s is 
+        # # following the policy after all searches, what is the value
+        # # Lets make this optimistic, which means that the current state is 
+        # # as good as the next best state and so
+        # index_max = max(range(len(prob)), key=prob.__getitem__)
+        # v = self.SA_score[(s,index_max)] / self.SA_counts[(s,index_max)]
+        # print("The value of being in state S: ", v)
+        print("The probabilities for state S are :", prob)
+        
+        return prob
+        
+    def search(self,game,opt_player):
+        '''
+        This actually runs 1 episode from the total number of simulations
+        
+        If we are not at the leaf node, we should use UCB to pick which node to expand,
+        If we are at the leaf node, we should use the current policy to expand the tree
+        
+        '''
         s = game.stringRepresentation()
-        canonicalBoard = game.getCanonicalForm()
         
-        if s not in self.Es:
-            self.Es[s] = game.getGameEnded(opt_player)
-        if self.Es[s] != 0:
-            # terminal node
-            return -self.Es[s]
         
-        if s not in self.Ps:
-            # leaf node
-            self.Ps[s], v = self.nnet.predict(canonicalBoard) # need the actual canonical board
+        #check if the game has ended
+        game_result = game.getGameEnded(opt_player)
+        if game_result != 0:
+            # The game has ended
+            return game_result
+        #check for leaf node
+        if s not in self.S_counts: # If this is true then this is a leaf node
+            # Now we will play a full game from here, using the NN and record the result
+            canonicalBoard = game.getCanonicalForm()
+            q_score,v_score = self.nnet.predict(canonicalBoard)
             valids = game.getValidMoves()
-            self.Ps[s] = self.Ps[s] * valids  # masking invalid moves
-            sum_Ps_s = np.sum(self.Ps[s])
+            q_score = q_score * valids  # masking invalid moves
+            sum_Ps_s = np.sum(q_score)
             if sum_Ps_s > 0:
-                self.Ps[s] /= sum_Ps_s  # renormalize
+                # q_score represents the prob distribution of our NN
+                q_score /= sum_Ps_s  # renormalize
             else:
                 # if all valid moves were masked make all valid moves equally probable
 
                 # NB! All valid moves may be masked if either your NNet architecture is insufficient or you've get overfitting or something else.
                 # If you have got dozens or hundreds of these messages you should pay attention to your NNet and/or training process.   
                 log.error("All valid moves were masked, doing a workaround.")
-                self.Ps[s] = self.Ps[s] + valids
-                self.Ps[s] /= np.sum(self.Ps[s])
-
-            self.Vs[s] = valids
-            self.Ns[s] = 0
-            return -v
-
-        valids = self.Vs[s]
-        cur_best = -float('inf')
-        best_act = -1
-        
-        # pick the action with the highest upper confidence bound
-        for a in range(game.getActionSize()):
-            if valids[a]:
-                if (s, a) in self.Qsa:
-                    u = self.Qsa[(s, a)] + self.Ps[s][a] * math.sqrt(self.Ns[s]) / (
-                            1 + self.Nsa[(s, a)])
-                else:
-                    u = self.Ps[s][a] * math.sqrt(self.Ns[s] + EPS)  # Q = 0 ?
-
-                if u > cur_best:
-                    cur_best = u
-                    best_act = a
-                    
-        a = best_act
-        nest_s, reward, done, info = game.getNextState(a)
-#         next_s = self.game.getCanonicalForm(next_s, next_player)
-
-        v = self.search(game,opt_player)
-        if (s, a) in self.Qsa:
-            self.Qsa[(s, a)] = (self.Nsa[(s, a)] * self.Qsa[(s, a)] + v) / (self.Nsa[(s, a)] + 1)
-            self.Nsa[(s, a)] += 1
-
-        else:
-            self.Qsa[(s, a)] = v
-            self.Nsa[(s, a)] = 1
-
-        self.Ns[s] += 1
-        return -v
+                q_score = q_score + valids
+                q_score /= np.sum(q_score)
+            
+            # Lets choose a move from the prob distribution of this NN
+            action = np.random.choice(game.getActionSize(),p = q_score)
+            
+            nest_s, reward, done, info = game.getNextState(action)
+            result = self.search(game,opt_player)
+            
+            if result != 0:
+                self.SA_score[(s, action)] = result
+                self.SA_counts[(s, action)] = 1
+                self.S_counts[s] = 1
+                return result
+            
+        else: # not a leaf node
+            # We have to apply UCB as this has been visited before
+            best_action = None
+            best_action_score = -float("inf")
+            valids = game.getValidMoves()
+            for action,move in enumerate(valids):
+                # action is valid
+                if move != 0:
+                    #check if we have visited this action
+                    if (s,action) in self.SA_score:
+                        UCB_score = self.SA_score[(s,action)] + self.c*(math.sqrt(self.total_counts))/(self.SA_counts[(s,action)])
+                    else:
+                        # This is max because self.SA_counts[(s,action)] = 0 which is the denominator
+                        UCB_score = float("inf")
+                    if UCB_score > best_action_score:
+                        best_action_score = UCB_score
+                        best_action = action
+            
+            # Now that we have the best action, lets move it and continue
+            nest_s, reward, done, info = game.getNextState(best_action)
+            result = self.search(game,opt_player)
+            self.S_counts[s] += 1
+            # updating the score for the current state
+            if (s, best_action) in self.SA_score:
+                self.SA_score[(s, best_action)] = (self.SA_counts[(s, best_action)] * self.SA_score[(s, best_action)] + result) / (self.SA_counts[(s, best_action)] + 1)
+                self.SA_counts[(s, best_action)] += 1
+            else:
+                self.SA_score[(s, best_action)] = result
+                self.SA_counts[(s, best_action)] = 1
+            #passing the result to the parent
+            return result
