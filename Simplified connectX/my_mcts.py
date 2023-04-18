@@ -1,6 +1,7 @@
 import numpy as np
 import math
 import time
+from policy import random_policy
 
 class my_mcts():
     '''
@@ -39,9 +40,6 @@ class my_mcts():
         # The output should be a probability distribution of moves
         self.nnet = nnet
         
-        # parameters for testing speed
-        self.search_count = 0
-        self.total_calls = 0
     def getActionProb(self,game,opt_player):
         '''
         This function runs all the simulations of the MCTS starting
@@ -54,8 +52,6 @@ class my_mcts():
         start = time.time()
         for i in range(self.args["num_mcts_sims"]):
             self.search(game.create_copy(),opt_player)
-            print("total searches : ",self.search_count)
-            print("total NN calls : ",self.total_calls)
         print(f"total time taken to run {self.args['num_mcts_sims']} iterations is {time.time() - start}")
         s = game.stringRepresentation()
         # Lets get the scores of children of the current state s and exponentiate to
@@ -93,26 +89,7 @@ class my_mcts():
         #check for leaf node
         if s not in self.S_counts: # If this is true then this is a leaf node
             # Now we will play a full game from here, using the NN and record the result
-            canonicalBoard = game.getCanonicalForm()
-            q_score,v_score = self.nnet.predict(canonicalBoard)
-            self.total_calls += 1
-            valids = game.getValidMoves()
-            q_score = q_score * valids  # masking invalid moves
-            sum_Ps_s = np.sum(q_score)
-            if sum_Ps_s > 0:
-                # q_score represents the prob distribution of our NN
-                q_score /= sum_Ps_s  # renormalize
-            else:
-                # if all valid moves were masked make all valid moves equally probable
-
-                # NB! All valid moves may be masked if either your NNet architecture is insufficient or you've get overfitting or something else.
-                # If you have got dozens or hundreds of these messages you should pay attention to your NNet and/or training process.   
-                log.error("All valid moves were masked, doing a workaround.")
-                q_score = q_score + valids
-                q_score /= np.sum(q_score)
-            
-            # Lets choose a move from the prob distribution of this NN
-            action = np.random.choice(game.getActionSize(),p = q_score)
+            action = random_policy(game)
             
             nest_s, reward, done, info = game.getNextState(action)
             result = self.search(game,opt_player)
