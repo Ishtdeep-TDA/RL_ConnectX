@@ -256,3 +256,5 @@ class Game():
         copy_object = Game()
         copy_object.env = self.env.create_copy()
         return copy_object
+    def get_possible_actions(self,):
+        return self.env.get_possible_actions()

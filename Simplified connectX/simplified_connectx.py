@@ -69,7 +69,7 @@ class SimplifiedConnectX(gym.Env):
     def get_reward(self):
         '''
         
-        The reward is 1 if player 1 wins -1 if player
+        The reward is 1 if player 1 wins, -1 if player
         -1 wins, -0.5 if a draw occurs, 0 if the game is not terminated.
         
         '''

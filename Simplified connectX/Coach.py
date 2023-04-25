@@ -28,12 +28,10 @@ class Coach():
     in Game and NeuralNet. args are specified in main.py.
     """
 
-    def __init__(self, game, nnet, args):
+    def __init__(self, game, args):
         self.game = game
-#         self.nnet = nnet
-        self.nnet = nnet  # only 1 network in alphazero
         self.args = args
-        self.mcts = my_mcts(self.game, self.nnet, self.args)
+        self.mcts = my_mcts(self.game, self.args)
 
     def executeEpisode(self):
         """
@@ -64,7 +62,7 @@ class Coach():
             print("Currently on move ",episodeStep)
 
             game_copy = game.create_copy()
-            self.mcts = my_mcts(game_copy, self.nnet, self.args)
+            self.mcts = my_mcts(game_copy, self.args)
             pi = self.mcts.getActionProb(game_copy, opt_player)
             
             action = np.random.choice(len(pi), p=pi)
@@ -75,7 +73,7 @@ class Coach():
             p_print(game.env.board)
             print("result ", r)
             if r != 0:
-                print("Result : ",r)
+                print("Result : ",r, "Optimizing player : ", opt_player)
                 break
 
             opt_player = -opt_player
