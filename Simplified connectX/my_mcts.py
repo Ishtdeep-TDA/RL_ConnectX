@@ -2,7 +2,6 @@ import numpy as np
 import math
 import time
 from policy import random_policy
-from Coach import p_print 
 from collections import defaultdict
 
 class my_mcts():
@@ -32,7 +31,7 @@ class my_mcts():
         #This stores the state action pair counts
         self.SA_counts = defaultdict(int)
         # This is the dictionary which counts the number of times a state is visited
-        self.S_counts = {}
+        self.S_counts = defaultdict(int)
         # This stores the total number of times a simulation has been run
         self.total_counts = 0
         # This is the exploration constant, which governs how much we should explore
@@ -53,10 +52,10 @@ class my_mcts():
         '''
         start = time.time()
         for i in range(self.args["num_mcts_sims"]):
-            self.search(game.create_copy(),opt_player)
+            self.search(game.create_copy(),opt_player,1)
         print(f"total time taken to run {self.args['num_mcts_sims']} iterations is {time.time() - start}")
         s = game.stringRepresentation()
-        # Lets get the scores of children of the current state s and exponentiate to
+        # Lets get the scores of children of the current state s
         prob = [self.SA_score[(s,a)] if (s,a) in self.SA_score else 0\
                 for a in range(game.getActionSize())]
         action = max(range(len(prob)), key=prob.__getitem__)
@@ -67,14 +66,17 @@ class my_mcts():
         
         return prob
         
-    def search(self,game,opt_player):
+    def search(self,game,opt_player,depth = 1):
         '''
         This actually runs 1 episode from the total number of simulations
         
         If we are not at the leaf node, we should use UCB to pick which node to expand,
         If we are at the leaf node, we should use the current policy to expand the tree
         
+        If depth is odd, then the scores are for the opt_player, else
+        it is for the other player and so we should multiply the score by -1 in this case (only for UCB)
         '''
+
         s = game.stringRepresentation()
         #check if the game has ended
         game_result = game.getGameEnded(opt_player)
@@ -82,7 +84,7 @@ class my_mcts():
             # The game has ended
             return game_result
 
-        if self.last_state_action not in self.SA_counts: # If this is true then this is a leaf node
+        if s not in self.S_counts: # If this is true then this is a leaf node
             action = random_policy(game)
             nest_s, reward, done, info = game.getNextState(action)
             result = self.policy_search(game,opt_player)
@@ -105,6 +107,7 @@ class my_mcts():
                     #check if we have visited this action
                     if (s,action) in self.SA_score:
                         UCB_score = self.SA_score[(s,action)] + self.c*(math.sqrt(self.total_counts))/(self.SA_counts[(s,action)])
+                        UCB_score = UCB_score*(-1)**depth
                     else:
                         # This is max because self.SA_counts[(s,action)] = 0 which is the denominator
                         UCB_score = float("inf")
@@ -117,8 +120,8 @@ class my_mcts():
             self.S_counts[s] += 1
             self.SA_counts[(s, best_action)] += 1
             self.last_state_action = (s,best_action)
-            
-            result = self.search(game,opt_player)
+
+            result = self.search(game,opt_player,depth + 1)
             # updating the score for the current state
             self.SA_score[(s, best_action)] += result
             #passing the result to the parent
@@ -128,6 +131,9 @@ class my_mcts():
         '''
         This search is run when the leaf node is reached
         '''
+        game_result = game.getGameEnded(opt_player)
+        if game_result != 0:
+            return game_result
         action = random_policy(game)
         nest_s, reward, done, info = game.getNextState(action)
         result = self.policy_search(game,opt_player)
