@@ -39,7 +39,9 @@ class my_mcts():
         self.c = args["c"]
         # This is used by the search method to keep track of the previous move played
         self.last_state_action = None # it is the (state,action) tuple for the previous move
-
+        
+        #Debugging variables
+        self.leaf_count = 0
 
     def getActionProb(self,game,opt_player):
         '''
@@ -53,11 +55,22 @@ class my_mcts():
         start = time.time()
         for i in range(self.args["num_mcts_sims"]):
             self.search(game.create_copy(),opt_player,1)
+
+            # Debugging
+            # valids = game.getValidMoves()
+            # s = game.stringRepresentation()
+            # for action,move in enumerate(valids):
+            #     # action is valid
+            #     if move != 0:
+            #         print("action ",action,"score ",self.SA_score[(s,action)],end = " ")
+            # print()
+
         print(f"total time taken to run {self.args['num_mcts_sims']} iterations is {time.time() - start}")
         s = game.stringRepresentation()
         # Lets get the scores of children of the current state s
         prob = [self.SA_score[(s,a)] if (s,a) in self.SA_score else 0\
                 for a in range(game.getActionSize())]
+        # picking the max action
         action = max(range(len(prob)), key=prob.__getitem__)
         prob = [0]*len(prob)
         prob[action] = 1
@@ -85,6 +98,7 @@ class my_mcts():
             return game_result
 
         if s not in self.S_counts: # If this is true then this is a leaf node
+            self.leaf_count += 1
             action = random_policy(game)
             nest_s, reward, done, info = game.getNextState(action)
             result = self.policy_search(game,opt_player)
@@ -94,6 +108,7 @@ class my_mcts():
                 self.SA_counts[(s, action)] = 1
                 self.S_counts[s] = 1
                 self.last_state_action = (s,action)
+                self.total_counts += 1
                 return result
             
         else: # not a leaf node
@@ -105,21 +120,27 @@ class my_mcts():
                 # action is valid
                 if move != 0:
                     #check if we have visited this action
-                    if (s,action) in self.SA_score:
-                        UCB_score = self.SA_score[(s,action)] + self.c*(math.sqrt(self.total_counts))/(self.SA_counts[(s,action)])
-                        UCB_score = UCB_score*(-1)**depth
+                    if self.SA_counts[(s,action)] > 0:
+                        UCB_score = self.SA_score[(s,action)]/self.S_counts[s] + self.c*(math.sqrt(self.total_counts))/(self.SA_counts[(s,action)])
+                        UCB_score = UCB_score*(-1)**(depth - 1)
+                        # print("UCB SCORE : ", (s,action), "is ", UCB_score)
                     else:
-                        # This is max because self.SA_counts[(s,action)] = 0 which is the denominator
+                        # This could be set to max for maximum exploration but can be set to anything
+                        # because we have not been in the state yet, we don't know what value it has
+                        # inf will lead to max exploration (trusting that the state not explored is a good state
+                        # 0 will mean that the algo is skeptic of new states
                         UCB_score = float("inf")
                     if UCB_score > best_action_score:
                         best_action_score = UCB_score
                         best_action = action
+                        
             
             # Now that we have the best action, lets move it and continue
             nest_s, reward, done, info = game.getNextState(best_action)
             self.S_counts[s] += 1
             self.SA_counts[(s, best_action)] += 1
             self.last_state_action = (s,best_action)
+            # self.total_counts += 1
 
             result = self.search(game,opt_player,depth + 1)
             # updating the score for the current state
